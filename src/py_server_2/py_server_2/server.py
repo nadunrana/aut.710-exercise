@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import csv
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -30,12 +30,16 @@ coordinates_midpoint = []
 plt.ion()
 figure, ax = plt.subplots(figsize=(8, 8))
 plt.xlim([-1, 3])
-plt.ylim([-3, 1])
+plt.ylim([-1, 3])
 plt.grid(color='grey', linestyle='-', linewidth=0.1)
 line1, line2 = ax.plot(0, 0, 'b+', 0, 0, 'r', linewidth=1)
 plt.title("Trajectories")
 plt.xlabel("X-Axis")
 plt.ylabel("Y-Axis")
+
+# with open('/home/kido/fom_ws/record.csv', 'w', encoding='UTF8') as f:
+#     writer = csv.writer(f)
+#     writer.writerow(['x1', 'y1', 'theta1', 'x2', 'y2', 'theta2'])
 
 
 class Server(Node):
@@ -70,6 +74,7 @@ class Server(Node):
         print("Euler:", self.x_euler, self.y_euler, self.yaw_euler,
               ", midpoint: ", self.x_midpoint, self.y_midpoint, self.yaw_midpoint)
 
+
         # Draw trajectories
         coordinates_euler.append((self.x_euler, self.y_euler))
         coordinates_midpoint.append((self.x_euler, self.y_euler))
@@ -93,6 +98,10 @@ class Server(Node):
         self.publisher_euler.publish(pose_euler)
         self.publisher_midpoint.publish(pose_midpoint)
 
+        # with open('/home/kido/fom_ws/record.csv', 'a+', encoding='UTF8') as f:
+        #     writer = csv.writer(f)
+        #     writer.writerow([self.x_euler, self.y_euler, self.yaw_euler, self.x_midpoint, self.y_midpoint, self.yaw_midpoint])
+
     def step_calculation(self, wl, wr, method="euler"):
         wl = wl * pi / 30
         wr = wr * pi / 30
@@ -103,7 +112,7 @@ class Server(Node):
                                  [self.yaw_euler]])
             func = np.matrix([[cos(state_k[2, 0]) / 2, cos(state_k[2, 0]) / 2],
                               [sin(state_k[2, 0]) / 2, sin(state_k[2, 0]) / 2],
-                              [1 / D, -1 / D]])
+                              [-1 / D, 1 / D]])
             inputs = np.matrix([[wl], [wr]])
             state_kp1 = state_k + INTERVAL * R * func * inputs
 
@@ -121,18 +130,16 @@ class Server(Node):
                                  [self.yaw_midpoint]])
             func = np.matrix([[cos(state_k[2, 0]) / 2, cos(state_k[2, 0]) / 2],
                               [sin(state_k[2, 0]) / 2, sin(state_k[2, 0]) / 2],
-                              [1 / D, -1 / D]])
+                              [-1 / D, 1 / D]])
             inputs = np.matrix([[wl], [wr]])
-            state_kp1 = state_k + INTERVAL * R * func * inputs
-            mid_state = (state_k + state_kp1) / 2
+            mid_state = state_k + INTERVAL * R * func * inputs / 2
             mid_yaw = mid_state[2, 0]
             mid_func = np.matrix([[cos(mid_yaw) / 2, cos(mid_yaw) / 2],
                                   [sin(mid_yaw) / 2, sin(mid_yaw) / 2],
-                                  [1/D, -1/D]])
+                                  [-1 / D, 1 / D]])
 
             # Assume the input at k+1 is not change
             state_kp1 = state_k + INTERVAL * R * mid_func * inputs
-            self.previous_input = inputs
 
             new_yaw = state_kp1[2, 0]
             if new_yaw > pi:
