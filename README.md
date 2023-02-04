@@ -1,5 +1,3 @@
-# aut.710-exercise01
-
 1. Change directory to the folder containing /src
 2. Run: colcon build
 3. Run: source install/setup.bash
