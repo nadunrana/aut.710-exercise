@@ -80,7 +80,7 @@ class Server(Node):
 
         # Draw trajectories
         coordinates_euler.append((self.x_euler, self.y_euler))
-        coordinates_midpoint.append((self.x_euler, self.y_euler))
+        coordinates_midpoint.append((self.x_midpoint, self.y_midpoint))
         x_euler, y_euler = zip(*coordinates_euler)
         x_midpoint, y_midpoint = zip(*coordinates_midpoint)
         print("Difference:", euler_distance(self.x_euler, self.y_euler, self.x_midpoint, self.y_midpoint))
