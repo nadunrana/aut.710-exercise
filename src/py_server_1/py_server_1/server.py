@@ -20,6 +20,8 @@ from math import sin, cos, pi, sqrt, pow
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Pose
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
 
 INTERVAL = 0.1
 D = 0.4
@@ -73,15 +75,27 @@ class Server(Node):
     def plot(self):
         # plt.xlim([-1, 3])
         # plt.ylim([-0.5, 3.5])
+        fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
         plt.grid(color='grey', linestyle='-', linewidth=0.1)
         plt.title("Trajectories")
         plt.xlabel("X-Axis")
         plt.ylabel("Y-Axis")
         plt.plot(self.x_euler[0, :], self.y_euler[0, :], 'b')
         # plt.plot(self.x_euler[1, :], self.y_euler[1, :], 'r')
-        plt.plot(self.x_euler[:, 700], self.y_euler[:, 700], linestyle='None', marker=".")
-        plt.plot(self.x_euler[:, 1400], self.y_euler[:, 1400], linestyle='None', marker=".")
-        plt.plot(self.x_euler[:, 2100], self.y_euler[:, 2100], linestyle='None', marker=".")
+        indices = [500, 1000, 1500, 2000]
+        for index in indices:
+            plt.plot(self.x_euler[:, index], self.y_euler[:, index], linestyle='None', marker=".")
+            cov = np.cov(self.x_euler[:, index], self.y_euler[:, index])
+            lambda_, v = np.linalg.eig(cov)
+            lambda_ = np.sqrt(lambda_)
+            for level in range(1, 4):
+                ell = Ellipse(xy=(self.x_euler[0, index], self.y_euler[0, index]),
+                              width=lambda_[0] * level * 2, height=lambda_[1] * level * 2,
+                              angle=np.rad2deg(np.arccos(v[0, 0])))
+                ell.set_facecolor('none')
+                ell.set_edgecolor('black')
+                ax.add_artist(ell)
+
         plt.show()
 
     def listener_callback(self, msg):
@@ -128,6 +142,8 @@ class Server(Node):
         # inputs = np.matrix([[wl], [wr]])
         rot_head = INTERVAL * R * (wr - wl) / (2 * D)
         trans_head = INTERVAL * R * (wr + wl) / 2
+        epsilon_rot = UNCERTAINTY_MODEL[0] * (rot_head ** 2) + UNCERTAINTY_MODEL[1] * (trans_head ** 2)
+        epsilon_trans = UNCERTAINTY_MODEL[2] * (trans_head ** 2) + UNCERTAINTY_MODEL[3] * 2 * (rot_head ** 2)
 
         for i in range(0, 101):
             state_k = np.matrix([[self.x_euler[i, self.message_count - 1]],
@@ -135,16 +151,13 @@ class Server(Node):
                                  [self.yaw_euler[i, self.message_count - 1]]])
 
             if i > 0:
-                sigma_rot_1 = rot_head + np.random.normal(0.0, UNCERTAINTY_MODEL[0] * (rot_head ** 2) +
-                                                          UNCERTAINTY_MODEL[1] * (trans_head ** 2))
-                sigma_rot_2 = rot_head + np.random.normal(0.0, UNCERTAINTY_MODEL[0] * (rot_head ** 2) +
-                                                          UNCERTAINTY_MODEL[1] * (trans_head ** 2))
-                sigma_trans = trans_head + np.random.normal(0.0, UNCERTAINTY_MODEL[2] * (trans_head ** 2) +
-                                                            UNCERTAINTY_MODEL[3] * 2 * (rot_head ** 2))
+                sigma_rot_1 = rot_head + np.random.normal(0.0, epsilon_rot)
+                sigma_rot_2 = rot_head + np.random.normal(0.0, epsilon_rot)
+                sigma_trans = trans_head + np.random.normal(0.0, epsilon_trans)
                 x_euler = state_k[0] + sigma_trans * cos(state_k[2] + sigma_rot_1)
                 y_euler = state_k[1] + sigma_trans * sin(state_k[2] + sigma_rot_1)
                 yaw_euler = state_k[2] + sigma_rot_1 + sigma_rot_2
-                print(sigma_rot_1, sigma_rot_2, sigma_trans)
+                # print(sigma_rot_1, sigma_rot_2, sigma_trans)
             else:
                 x_euler = state_k[0] + trans_head * cos(state_k[2])
                 y_euler = state_k[1] + trans_head * sin(state_k[2])
