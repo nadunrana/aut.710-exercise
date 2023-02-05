@@ -80,8 +80,11 @@ class Server(Node):
         plt.title("Trajectories")
         plt.xlabel("X-Axis")
         plt.ylabel("Y-Axis")
-        plt.plot(self.x_euler[0, :], self.y_euler[0, :], 'b')
-        # plt.plot(self.x_euler[1, :], self.y_euler[1, :], 'r')
+        plt.plot(self.x_euler[0, :], self.y_euler[0, :], 'b', label='Expected position')
+        x_mean = (self.x_euler.sum(axis=0) - self.x_euler[0, :]) / 100
+        y_mean = (self.y_euler.sum(axis=0) - self.y_euler[0, :]) / 100
+        print(x_mean.shape, y_mean.shape)
+        plt.plot(x_mean, y_mean, 'r', label='Mean position')
         indices = [500, 1000, 1500, 2000]
         for index in indices:
             plt.plot(self.x_euler[:, index], self.y_euler[:, index], linestyle='None', marker=".")
@@ -89,13 +92,13 @@ class Server(Node):
             lambda_, v = np.linalg.eig(cov)
             lambda_ = np.sqrt(lambda_)
             for level in range(1, 4):
-                ell = Ellipse(xy=(self.x_euler[0, index], self.y_euler[0, index]),
+                ell = Ellipse(xy=(x_mean[index - 1], y_mean[index - 1]),
                               width=lambda_[0] * level * 2, height=lambda_[1] * level * 2,
                               angle=np.rad2deg(np.arccos(v[0, 0])))
                 ell.set_facecolor('none')
                 ell.set_edgecolor('black')
                 ax.add_artist(ell)
-
+        ax.legend()
         plt.show()
 
     def listener_callback(self, msg):

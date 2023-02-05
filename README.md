@@ -6,6 +6,6 @@
 4. Run: ros2 run py_server_2 server
 5. On another terminal: ros2 bag play rosbag2_2023_01_12-15_43_23/rosbag2_2023_01_12-15_43_23_0.db3 -r 0.5
 
-# aut.710-exercise02
-4. Run: ros2 run py_server_1 server
-5. On another terminal: ros2 bag play rosbag2_2023_01_12-15_43_23/rosbag2_2023_01_12-15_43_23_0.db3 -r 4.0
+# aut.710-exercise02-task2
+4. Run: ros2 run py_server_1 task2
+5. On another terminal: ros2 bag play rosbag2_2023_01_12-15_43_23/rosbag2_2023_01_12-15_43_23_0.db3 -r 5.0
