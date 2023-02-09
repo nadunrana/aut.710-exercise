@@ -26,34 +26,15 @@ from matplotlib.patches import Ellipse
 INTERVAL = 0.1
 D = 0.4
 R = 0.1
-UNCERTAINTY_MODEL = [10, 3, 15, 4]
+UNCERTAINTY_MODEL = [20, 6, 25, 8]
 MESSAGE_LIMIT = 2216
 coordinates_line = []
 coordinates_cloud = []
 
 
-# plt.ion()
-# figure, ax = plt.subplots(figsize=(8, 8))
-# plt.xlim([-1, 3])
-# plt.ylim([-0.5, 3.5])
-# plt.grid(color='grey', linestyle='-', linewidth=0.1)
-# # line1, line2 = ax.plot(0, 0, 'b+', 0, 0, 'r--', linewidth=1)
-# # line, = ax.plot(0, 0, 'b+', markersize=2, label="Trajectory")
-# # cloud, = ax.plot(0, 0, 'r', markersize=2, label="Particles Cloud")
-# # ax.legend()
-# plt.title("Trajectories")
-# plt.xlabel("X-Axis")
-# plt.ylabel("Y-Axis")
-
-# with open('/home/kido/fom_ws/record.csv', 'w', encoding='UTF8') as f:
-#     writer = csv.writer(f)
-#     writer.writerow(['x1', 'y1', 'theta1', 'x2', 'y2', 'theta2'])
-
-
 class Server(Node):
     def __init__(self):
         super().__init__('minimal_subscriber')
-
         self.x_euler = np.zeros((101, MESSAGE_LIMIT + 1))
         self.y_euler = np.zeros((101, MESSAGE_LIMIT + 1))
         self.yaw_euler = np.zeros((101, MESSAGE_LIMIT + 1))
@@ -73,8 +54,6 @@ class Server(Node):
         self.plot()
 
     def plot(self):
-        # plt.xlim([-1, 3])
-        # plt.ylim([-0.5, 3.5])
         fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
         plt.grid(color='grey', linestyle='-', linewidth=0.1)
         plt.title("Trajectories")
@@ -85,10 +64,10 @@ class Server(Node):
         y_mean = (self.y_euler.sum(axis=0) - self.y_euler[0, :]) / 100
         print(x_mean.shape, y_mean.shape)
         plt.plot(x_mean, y_mean, 'r', label='Mean position')
-        indices = [500, 1000, 1500, 2000]
+        indices = [700, 1400, 2100]
         for index in indices:
-            plt.plot(self.x_euler[:, index], self.y_euler[:, index], linestyle='None', marker=".")
-            cov = np.cov(self.x_euler[:, index], self.y_euler[:, index])
+            plt.plot(self.x_euler[:, index - 1], self.y_euler[:, index - 1], linestyle='None', marker=".")
+            cov = np.cov(self.x_euler[:, index - 1], self.y_euler[:, index - 1])
             lambda_, v = np.linalg.eig(cov)
             lambda_ = np.sqrt(lambda_)
             for level in range(1, 4):
@@ -106,43 +85,9 @@ class Server(Node):
         self.get_logger().info('I heard: #%d "%s"' % (self.message_count, msg.data))
         self.step_calculation(msg.data[0], msg.data[1])
 
-        # self.x_midpoint, self.y_midpoint, self.yaw_midpoint = self.step_calculation(msg.data[0], msg.data[1], method="midpoint")
-        # print("Euler:", self.x_euler, self.y_euler, self.yaw_euler,
-        #       ", midpoint: ", self.x_midpoint, self.y_midpoint, self.yaw_midpoint)
-
-        # Draw trajectories
-        # if self.message_count % 700 == 0:
-        #     for i in range(1, 101):
-        #         coordinates_cloud.append((self.x_euler[i], self.y_euler[i]))
-        #     x_cloud, y_cloud = zip(*coordinates_cloud)
-        #     cloud.set_xdata(x_cloud)
-        #     cloud.set_ydata(y_cloud)
-
-        # coordinates_line.append((self.x_euler[0], self.y_euler[0]))
-        # x_line, y_line = zip(*coordinates_line)
-        # line.set_xdata(x_line)
-        # line.set_ydata(y_line)
-        # figure.canvas.draw()
-        # figure.canvas.flush_events()
-
-        # Publish to topics
-        # pose_euler = Pose()
-        # pose_midpoint = Pose()
-        # pose_euler.position.x = self.x_euler
-        # pose_euler.position.y = self.y_euler
-        # pose_midpoint.position.x = self.x_midpoint
-        # pose_midpoint.position.y = self.y_midpoint
-        # self.publisher_euler.publish(pose_euler)
-        # self.publisher_midpoint.publish(pose_midpoint)
-
-        # with open('/home/kido/fom_ws/record.csv', 'a+', encoding='UTF8') as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow([self.x_euler, self.y_euler, self.yaw_euler, self.x_midpoint, self.y_midpoint, self.yaw_midpoint])
-
     def step_calculation(self, wl, wr):
         wl = wl * pi / 30
         wr = wr * pi / 30
-        # inputs = np.matrix([[wl], [wr]])
         rot_head = INTERVAL * R * (wr - wl) / (2 * D)
         trans_head = INTERVAL * R * (wr + wl) / 2
         epsilon_rot = UNCERTAINTY_MODEL[0] * (rot_head ** 2) + UNCERTAINTY_MODEL[1] * (trans_head ** 2)
@@ -160,10 +105,9 @@ class Server(Node):
                 x_euler = state_k[0] + sigma_trans * cos(state_k[2] + sigma_rot_1)
                 y_euler = state_k[1] + sigma_trans * sin(state_k[2] + sigma_rot_1)
                 yaw_euler = state_k[2] + sigma_rot_1 + sigma_rot_2
-                # print(sigma_rot_1, sigma_rot_2, sigma_trans)
             else:
-                x_euler = state_k[0] + trans_head * cos(state_k[2])
-                y_euler = state_k[1] + trans_head * sin(state_k[2])
+                x_euler = state_k[0] + trans_head * cos(state_k[2] + rot_head)
+                y_euler = state_k[1] + trans_head * sin(state_k[2] + rot_head)
                 yaw_euler = state_k[2] + 2 * rot_head
 
             if yaw_euler > pi:
