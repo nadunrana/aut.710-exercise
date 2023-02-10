@@ -16,13 +16,10 @@
 import rclpy
 from rclpy.node import Node
 import numpy as np
-from math import sin, cos, pi, sqrt, pow
-from std_msgs.msg import Float64MultiArray
-from geometry_msgs.msg import Pose
+from math import sin, cos, sqrt
 from sensor_msgs.msg import JointState
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
-from threading import Thread
 
 # Constants
 INTERVAL = 0.1
