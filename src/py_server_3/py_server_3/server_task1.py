@@ -108,17 +108,17 @@ class Server(Node):
         # Turn on interactive mode
         plt.ion()
         fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
-        plt.xlim([-10, 30])
-        plt.ylim([-7, 9])
+        plt.xlim([-20, 20])
+        plt.ylim([-20, 20])
         plt.grid(color='grey', linestyle='-', linewidth=0.1)
         plt.title("Trajectories")
         plt.xlabel("X-Axis")
         plt.ylabel("Y-Axis")
 
         # Landmarks
-        # plt.plot(L0[0, 0], L0[1, 0], linestyle='None', marker="o", label='Landmark 0')
-        # plt.plot(L1[0, 0], L1[1, 0], linestyle='None', marker="o", label='Landmark 1')
-        # plt.plot(L2[0, 0], L2[1, 0], linestyle='None', marker="o", label='Landmark 2')
+        plt.plot(self.L0[0, 0], self.L0[1, 0], linestyle='None', marker="o", label='Landmark 0')
+        plt.plot(self.L1[0, 0], self.L1[1, 0], linestyle='None', marker="o", label='Landmark 1')
+        plt.plot(self.L2[0, 0], self.L2[1, 0], linestyle='None', marker="o", label='Landmark 2')
 
         # Initialization for animation and text labels
         predicted_coordinates = []
@@ -130,9 +130,9 @@ class Server(Node):
                          transform=ax.transAxes)
         text1 = plt.text(0.2, 0.2, "Coordinate: 0.0, 0.0", fontsize=10, horizontalalignment='center',
                          verticalalignment='center', transform=ax.transAxes)
-        text2 = plt.text(0.2, 0.3, "Predicted Dist: 0.0 , 0.0, 0.0", fontsize=10, horizontalalignment='center',
+        text2 = plt.text(0.2, 0.3, "Predicted Meas: 0.0 , 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
                          verticalalignment='center', transform=ax.transAxes)
-        text3 = plt.text(0.2, 0.4, "Measured Dist: 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
+        text3 = plt.text(0.2, 0.4, "Measured Meas: 0.0, 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
                          verticalalignment='center', transform=ax.transAxes)
 
         # Iterate through time array to plot the robot position and update state and measurement
@@ -145,18 +145,18 @@ class Server(Node):
             text0.set_text(f"Time: {round(index * INTERVAL, 2)}")
             text1.set_text(f"Coordinate: {round(self.x_predict[index], 2)}, {round(self.y_predict[index], 2)}")
 
-            if index % 5 == 0:
+            if index % 3 == 0:
                 # Updated position
-                i = int(index / 5)
+                i = int(index / 3)
                 updated_coordinates.append((self.x_update[i], self.y_update[i]))
                 text2.set_text(
-                    f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, {round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
+                    f"Predicted Dist: {round(self.measure_hat[0, i], 2)}, {round(self.measure_hat[1, i], 2)}, {round(self.measure_hat[2, i], 2)}, {round(self.measure_hat[3, i], 2)}, {round(self.measure_hat[4, i], 2)}, {round(self.measure_hat[5, i], 2)}")
                 text3.set_text(
-                    f"Measured Dist: {round(self.dist[0, i], 2)}, {round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
+                    f"Measured Dist: {round(self.measure[0, i], 2)}, {round(self.measure[1, i], 2)}, {round(self.measure[2, i], 2)}, {round(self.measure[3, i], 2)}, {round(self.measure[4, i], 2)}, {round(self.measure[5, i], 2)}")
                 x_update, y_update = zip(*updated_coordinates)
                 update.set_xdata(x_update)
                 update.set_ydata(y_update)
-                lambda_, v = np.linalg.eig(self.P_update[:, :, i])
+                lambda_, v = np.linalg.eig(self.P_update[0:3, 0:3, i])
                 ell = Ellipse(xy=(self.x_update[i], self.y_update[i]),
                               width=lambda_[0] * 2, height=lambda_[1] * 2,
                               angle=np.rad2deg(np.arccos(v[0, 0])))
@@ -249,8 +249,8 @@ class Server(Node):
         fig5.legend()
 
         # Show the plot but continue the thread
-        # plt.show(block=False)
-        plt.show()
+        plt.show(block=False)
+        # plt.show()
 
     def odom_callback(self, msg):
         # Increase the counter and process the prediction
@@ -410,7 +410,7 @@ class Server(Node):
             # print(self.x_update)
             # print(self.yaw_predict)
             self.plot()
-            # self.canvas()
+            self.canvas()
 
 
 def regulate(angle):
