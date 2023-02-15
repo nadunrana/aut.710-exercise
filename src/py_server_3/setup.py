@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'py_server_1'
+package_name = 'py_server_3'
 
 setup(
     name=package_name,
