@@ -10,9 +10,5 @@ def generate_launch_description():
         Node(
             package='py_server_3',
             executable='task2'
-        ),
-        Node(
-            package='py_server_3',
-            executable='task3'
         )
     ])

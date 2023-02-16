@@ -21,8 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'task1 = py_server_3.server_task1:main',
-            'task2 = py_server_3.server_task2:main',
-            'task3 = py_server_3.server_task3:main'
+            'task2 = py_server_3.server_task2:main'
         ],
     },
 )

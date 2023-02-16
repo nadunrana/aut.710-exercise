@@ -16,133 +16,371 @@
 import rclpy
 from rclpy.node import Node
 import numpy as np
-from math import sin, cos, pi, sqrt, pow
-from std_msgs.msg import Float64MultiArray
-from geometry_msgs.msg import Pose
+from math import sin, cos, sqrt, pi
+from sensor_msgs.msg import JointState
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 # Constants
 INTERVAL = 0.1
-D = 0.4
-R = 0.1
-UNCERTAINTY_MODEL = [20, 6, 25, 8]
-MESSAGE_LIMIT = 2216
-coordinates_line = []
-coordinates_cloud = []
+D = 0.44
+Radius = 0.12
+ODOM_LIMIT = 383
+SENSOR_LIMIT = 127
+EPSILON = 0.25
+R = np.eye(3) * 0.000025
+M = np.matrix('0.001, 0, 0; 0, 0.0002, 0; 0, 0, 0.0002')
+L0 = np.matrix('7.5; -4.0')
+L1 = np.matrix('-5.0; 8.0')
+L2 = np.matrix('-7.0; -6.5')
 
 
 class Server(Node):
     def __init__(self):
         super().__init__('minimal_subscriber')
+        # Temporary variables
+        self.x = 0.0
+        self.y = 0.0
+        self.yaw = 0.0
+        self.P = np.zeros((3, 3))
+        self.Q = np.zeros((3, 3))
+        self.A = np.eye(3)
 
         # Logged variables
-        # The index 0 is for the mean (no noise) robot
-        self.x_euler = np.zeros((101, MESSAGE_LIMIT + 1))
-        self.y_euler = np.zeros((101, MESSAGE_LIMIT + 1))
-        self.yaw_euler = np.zeros((101, MESSAGE_LIMIT + 1))
+        self.x_predict = np.zeros(ODOM_LIMIT + 1)
+        self.y_predict = np.zeros(ODOM_LIMIT + 1)
+        self.yaw_predict = np.zeros(ODOM_LIMIT + 1)
+        self.P_predict = np.zeros((3, 3, ODOM_LIMIT + 1))
+
+        self.x_update = np.zeros(SENSOR_LIMIT + 1)
+        self.y_update = np.zeros(SENSOR_LIMIT + 1)
+        self.yaw_update = np.zeros(SENSOR_LIMIT + 1)
+        self.P_update = np.zeros((3, 3, SENSOR_LIMIT + 1))
+
+        self.wl = np.zeros(ODOM_LIMIT + 1)
+        self.wr = np.zeros(ODOM_LIMIT + 1)
+
+        self.dist_hat = np.zeros((3, SENSOR_LIMIT + 1))
+        self.dist = np.zeros((3, SENSOR_LIMIT + 1))
 
         # Counter for indexing
-        self.message_count = 0
+        self.odom_count = 0
+        self.sensor_count = 0
 
         # Subscriber
-        self.subscription = self.create_subscription(
-            Float64MultiArray,
-            '/Wheels_data',
-            self.listener_callback,
-            10)
-        self.subscription  # prevent unused variable warning
+        self.sensor_subscription = self.create_subscription(
+            JointState,
+            '/landmarks',
+            self.sensor_callback,
+            20)
+        self.odom_subscription = self.create_subscription(
+            JointState,
+            '/joint_states',
+            self.odom_callback,
+            20)
+        self.sensor_subscription  # prevent unused variable warning
+        self.odom_subscription
 
-        # Spin until the last message to plot
-        while self.message_count < MESSAGE_LIMIT:
-            rclpy.spin_once(self)
+        # while self.odom_count < ODOM_LIMIT:
+        #     rclpy.spin_once(self)
+        #
+        # self.plot()
 
-        self.plot()
-
-    def plot(self):
+    def canvas(self):
+        # Turn on interactive mode
+        plt.ion()
         fig, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
+        plt.xlim([-20, 20])
+        plt.ylim([-20, 20])
         plt.grid(color='grey', linestyle='-', linewidth=0.1)
         plt.title("Trajectories")
         plt.xlabel("X-Axis")
         plt.ylabel("Y-Axis")
-        plt.plot(self.x_euler[0, :], self.y_euler[0, :], 'b', label='Expected position')
 
-        # Calculate the mean trajectory
-        x_mean = (self.x_euler.sum(axis=0) - self.x_euler[0, :]) / 100
-        y_mean = (self.y_euler.sum(axis=0) - self.y_euler[0, :]) / 100
-        # print(x_mean.shape, y_mean.shape)
-        plt.plot(x_mean, y_mean, 'r', label='Mean position')
+        # Landmarks
+        plt.plot(L0[0, 0], L0[1, 0], linestyle='None', marker="o", label='Landmark 0')
+        plt.plot(L1[0, 0], L1[1, 0], linestyle='None', marker="o", label='Landmark 1')
+        plt.plot(L2[0, 0], L2[1, 0], linestyle='None', marker="o", label='Landmark 2')
 
-        # Plot the Confidence Ellipses
-        indices = [700, 1400, 2100]
-        for index in indices:
+        # Initialization for animation and text labels
+        predicted_coordinates = []
+        updated_coordinates = []
+        predict, = ax.plot(0, 0, 'b+', markersize=2, label="Predicted position")
+        update, = ax.plot(0, 0, 'r--', linewidth=1, label="Updated position")
+        ax.legend()
+        text0 = plt.text(0.2, 0.1, "Time: 0.0", fontsize=10, horizontalalignment='center', verticalalignment='center',
+                         transform=ax.transAxes)
+        text1 = plt.text(0.2, 0.2, "Coordinate: 0.0, 0.0", fontsize=10, horizontalalignment='center',
+                         verticalalignment='center', transform=ax.transAxes)
+        text2 = plt.text(0.2, 0.3, "Predicted Dist: 0.0 , 0.0, 0.0", fontsize=10, horizontalalignment='center',
+                         verticalalignment='center', transform=ax.transAxes)
+        text3 = plt.text(0.2, 0.4, "Measured Dist: 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
+                         verticalalignment='center', transform=ax.transAxes)
 
-            # Calculate the covariances of each sample
-            plt.plot(self.x_euler[:, index - 1], self.y_euler[:, index - 1], linestyle='None', marker=".")
-            cov = np.cov(self.x_euler[:, index - 1], self.y_euler[:, index - 1])
+        # Iterate through time array to plot the robot position and update state and measurement
+        for index in range(0, ODOM_LIMIT):
+            # Predicted position
+            predicted_coordinates.append((self.x_predict[index], self.y_predict[index]))
+            x_predict, y_predict = zip(*predicted_coordinates)
+            predict.set_xdata(x_predict)
+            predict.set_ydata(y_predict)
+            text0.set_text(f"Time: {round(index * INTERVAL, 2)}")
+            text1.set_text(f"Coordinate: {round(self.x_predict[index], 2)}, {round(self.y_predict[index], 2)}")
 
-            # Compute the eigenvalues and eigenvectors
-            lambda_, v = np.linalg.eig(cov)
-            lambda_ = np.sqrt(lambda_)
-
-            # Plot 3 layers of confidence
-            for level in range(1, 4):
-                ell = Ellipse(xy=(x_mean[index - 1], y_mean[index - 1]),
-                              width=lambda_[0] * level * 2, height=lambda_[1] * level * 2,
+            if index % 3 == 0:
+                # Updated position
+                i = int(index / 3)
+                updated_coordinates.append((self.x_update[i], self.y_update[i]))
+                text2.set_text(f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, {round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
+                text3.set_text(f"Measured Dist: {round(self.dist[0, i], 2)}, {round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
+                x_update, y_update = zip(*updated_coordinates)
+                update.set_xdata(x_update)
+                update.set_ydata(y_update)
+                lambda_, v = np.linalg.eig(self.P_update[:, :, i])
+                ell = Ellipse(xy=(self.x_update[i], self.y_update[i]),
+                              width=lambda_[0] * 2, height=lambda_[1] * 2,
                               angle=np.rad2deg(np.arccos(v[0, 0])))
                 ell.set_facecolor('none')
                 ell.set_edgecolor('black')
                 ax.add_artist(ell)
-        ax.legend()
-        plt.show()
 
-    def listener_callback(self, msg):
+            # Update the frame ~ making animation
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+
+            # Stop the interactive mode
+            if index == ODOM_LIMIT - 1:
+                plt.ioff()
+                plt.show()
+
+    def plot(self):
+        # Create the time arrays
+        tspan1 = np.arange(0, INTERVAL * ODOM_LIMIT + 0.05, INTERVAL)
+        tspan2 = np.arange(0, 3 * INTERVAL * SENSOR_LIMIT + 0.05, 3 * INTERVAL)
+
+        # Plot the wheels velocity
+        fig1 = plt.figure(2)
+        plt.plot(tspan1, self.wl, label="Left wheel")
+        plt.plot(tspan1, self.wr, label="Right wheel")
+        plt.grid(color='gray', linestyle='-', linewidth=0.5)
+        plt.title("Wheels velocity")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Speed (rad/s)")
+
+        # Plot the predicted and updated covariances
+        fig2 = plt.figure(3)
+        plt.plot(tspan1, self.P_predict[0, 0, :], label="Predicted covariance of x")
+        plt.plot(tspan1, self.P_predict[1, 1, :], label="Predicted covariance of y")
+        plt.plot(tspan1, self.P_predict[2, 2, :], label="Predicted covariance of psi")
+        plt.plot(tspan2, self.P_update[0, 0, :], label="Updated covariance of x")
+        plt.plot(tspan2, self.P_update[1, 1, :], label="Updated covariance of y")
+        plt.plot(tspan2, self.P_update[2, 2, :], label="Updated covariance of psi")
+        plt.grid(color='gray', linestyle='-', linewidth=0.5)
+        plt.title("Covariances")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Value")
+
+        # Plot the predicted and measured distance to landmark
+        fig3 = plt.figure(4)
+        # plt.plot(tspan2, self.dist[0, :], label="Measured distance LM1")
+        # plt.plot(tspan2, self.dist[1, :], label="Measured distance LM2")
+        # plt.plot(tspan2, self.dist[2, :], label="Measured distance LM3")
+        plt.plot(tspan2, self.dist_hat[0, :], label="Predicted distance LM1")
+        plt.plot(tspan2, self.dist_hat[1, :], label="Predicted distance LM2")
+        plt.plot(tspan2, self.dist_hat[2, :], label="Predicted distance LM3")
+        plt.grid(color='gray', linestyle='-', linewidth=0.5)
+        plt.title("Distance to Landmarks")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Distance")
+        fig1.legend()
+        fig2.legend()
+        fig3.legend()
+
+        # Show the plot but continue the thread
+        plt.show(block=False)
+
+    def odom_callback(self, msg):
         # Increase the counter and process the prediction
-        self.message_count += 1
-        self.get_logger().info('I heard: #%d "%s"' % (self.message_count, msg.data))
-        self.step_calculation(msg.data[0], msg.data[1])
+        self.odom_count += 1
+        self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
+        self.step_calculation(msg.velocity[0], msg.velocity[1])
+
+    def sensor_callback(self, msg):
+        # Increase the counter and process the update
+        self.sensor_count += 1
+        self.get_logger().info('Sensor says: #%d "%s"' % (self.sensor_count, msg.position))
+        self.update(msg.position[0], msg.position[1], msg.position[2])
+
+    def update(self, dist_0, dist_1, dist_2):
+        index = self.sensor_count
+        P = self.P
+        x = self.x
+        y = self.y
+        yaw = self.yaw
+
+        # Predict the measurement
+        dist_hat_0 = sqrt((x - L0[0, 0]) ** 2 + (y - L0[1, 0]) ** 2)
+        dist_hat_1 = sqrt((x - L1[0, 0]) ** 2 + (y - L1[1, 0]) ** 2)
+        dist_hat_2 = sqrt((x - L2[0, 0]) ** 2 + (y - L2[1, 0]) ** 2)
+
+        z = np.array([dist_0, dist_1, dist_2])
+        zh = np.array([dist_hat_0, dist_hat_1, dist_hat_2])
+
+
+        H = np.zeros((3, 3))
+        H[0, 0] = (x - L0[0, 0]) / dist_hat_0
+        H[0, 1] = (y - L0[1, 0]) / dist_hat_0
+        H[1, 0] = (x - L1[0, 0]) / dist_hat_1
+        H[1, 1] = (y - L1[1, 0]) / dist_hat_1
+        H[2, 0] = (x - L2[0, 0]) / dist_hat_2
+        H[2, 1] = (y - L2[1, 0]) / dist_hat_2
+
+        state = np.matrix(f'{x};{y};{yaw}')
+
+        for i in range(0, 3):
+            vi = []
+            Si = []
+            for j in range(0, 3):
+                vij = z[i] - zh[j]
+                Sij = H[j:j + 1, 0:3] * P * H[j:j + 1, 0:3].T + R[j, j]
+                Xij = vij * vij / Sij
+                vi.append(Xij)
+                Si.append(Sij)
+
+            j = np.argmin(vi)
+            K = P * H[j:j + 1, 0:3].T * np.linalg.inv(Si[j])
+            P = (np.eye(3) - K * H[j:j + 1, 0:3]) * P
+            P = 0.5 * (P + P.T)
+            state = state + K * (z[i] - zh[j])
+            print("#" + str(i) + ":", z[i] - zh[j])
+
+        """
+
+        V = z[:, np.newaxis] - zh
+
+        # z = np.matrix(f"{dist_0}; {dist_1}; {dist_2}")
+        # zhat = np.matrix(f"{dist_hat_0}; {dist_hat_1}; {dist_hat_2}")
+
+
+        
+        # H linearization
+        H = np.zeros((3, 3))
+        H[0, 0] = (x - L0[0, 0]) / dist_hat_0
+        H[0, 1] = (y - L0[1, 0]) / dist_hat_0
+        H[1, 0] = (x - L1[0, 0]) / dist_hat_1
+        H[1, 1] = (y - L1[1, 0]) / dist_hat_1
+        H[2, 0] = (x - L2[0, 0]) / dist_hat_2
+        H[2, 1] = (y - L2[1, 0]) / dist_hat_2
+
+        S = H * P * H.T + R
+        X = V.T * np.linalg.inv(S) * V
+        indices = np.argmin(X, axis=1)
+        print(indices, X)
+
+        state = np.matrix(f'{x};{y};{yaw}')
+
+        for i in range(0, 3):
+            j = int(indices[i])
+            h = np.zeros((3, 3))
+            h[j:j+1, 0:3] = H[j:j + 1, 0:3]
+            # K = P * H[j:j + 1, 0:3].T * np.linalg.inv(H[j:j + 1, 0:3] * P * H[j:j + 1, 0:3].T + R[j, j])
+            # P = (np.eye(3) - K * H[j:j + 1, 0:3]) * P
+            K = P * h.T * np.linalg.inv(h * P * h.T + R)
+            P = (np.eye(3) - K * h) * P
+            P = 0.5 * (P + P.T)
+            state = state + K * (z[i] - zh[j])
+            print("#" + str(i) + ":", z[i] - zh[j])
+        """
+        # zhat = np.matrix(f'{z}')
+
+        # Posterior
+        # K = P * H.T * np.linalg.inv(H * P * H.T + R)
+        # P_pos = (np.eye(3) - K * H) * P
+        # updated_position = np.matrix(f'{x}; {y}; {yaw}') + K * (z - zhat)
+
+
+        # Save to temporary variables and logged variables
+        self.x = state[0, 0]
+        self.y = state[1, 0]
+        self.yaw = state[2, 0]
+        self.P = P
+
+        self.x_update[index] = state[0, 0]
+        self.y_update[index] = state[1, 0]
+        self.yaw_update[index] = state[2, 0]
+        self.P_update[:, :, index] = P
+        print("State diff:", state[0, 0] - x, state[1, 0] - y)
+
+        self.dist_hat[0, index] = np.matrix(dist_hat_0)
+        self.dist_hat[1, index] = np.matrix(dist_hat_1)
+        self.dist_hat[2, index] = np.matrix(dist_hat_2)
+        # self.dist[0, index] = np.matrix(dist_0)
+        # self.dist[1, index] = np.matrix(dist_1)
+        # self.dist[2, index] = np.matrix(dist_2)
 
     def step_calculation(self, wl, wr):
-        # Calculate the mean position
         wl = wl * pi / 30
         wr = wr * pi / 30
-        rot_head = INTERVAL * R * (wr - wl) / (2 * D)
-        trans_head = INTERVAL * R * (wr + wl) / 2
 
-        # Make normal distribution for noise
-        epsilon_rot = UNCERTAINTY_MODEL[0] * (rot_head ** 2) + UNCERTAINTY_MODEL[1] * (trans_head ** 2)
-        epsilon_trans = UNCERTAINTY_MODEL[2] * (trans_head ** 2) + UNCERTAINTY_MODEL[3] * 2 * (rot_head ** 2)
+        rot_head = INTERVAL * Radius * (wr - wl) / (2 * D)
+        trans_head = INTERVAL * Radius * (wr + wl) / 2
 
-        # Predict the robot position
-        for i in range(0, 101):
-            state_k = np.matrix([[self.x_euler[i, self.message_count - 1]],
-                                 [self.y_euler[i, self.message_count - 1]],
-                                 [self.yaw_euler[i, self.message_count - 1]]])
+        index = self.odom_count
+        x = self.x
+        y = self.y
+        yaw = self.yaw
 
-            # With noise
-            if i > 0:
-                sigma_rot_1 = rot_head + np.random.normal(0.0, epsilon_rot)
-                sigma_rot_2 = rot_head + np.random.normal(0.0, epsilon_rot)
-                sigma_trans = trans_head + np.random.normal(0.0, epsilon_trans)
-                x_euler = state_k[0] + sigma_trans * cos(state_k[2] + sigma_rot_1)
-                y_euler = state_k[1] + sigma_trans * sin(state_k[2] + sigma_rot_1)
-                yaw_euler = state_k[2] + sigma_rot_1 + sigma_rot_2
+        A = self.A
+        P = self.P
 
-            # Without noise
-            else:
-                x_euler = state_k[0] + trans_head * cos(state_k[2] + rot_head)
-                y_euler = state_k[1] + trans_head * sin(state_k[2] + rot_head)
-                yaw_euler = state_k[2] + 2 * rot_head
+        # Log the wheels speed
+        self.wl[index] = wl
+        self.wr[index] = wr
 
-            # Regulate the psi
-            if yaw_euler > pi:
-                yaw_euler -= 2 * pi
-            elif yaw_euler < -pi:
-                yaw_euler += 2 * pi
+        x_predict = x + trans_head * cos(yaw + rot_head)
+        y_predict = y + trans_head * sin(yaw + rot_head)
+        yaw_predict = yaw + rot_head * 2
+        # print(round(yaw_predict, 4))
 
-            self.x_euler[i, self.message_count] = x_euler
-            self.y_euler[i, self.message_count] = y_euler
-            self.yaw_euler[i, self.message_count] = yaw_euler
+        # Calculate the predicted positions and save to temporary and logged variables
+        self.x_predict[index] = x_predict
+        self.y_predict[index] = y_predict
+        self.yaw_predict[index] = yaw_predict
+
+        self.x = x_predict
+        self.y = y_predict
+        self.yaw = yaw_predict
+
+        # Linearization
+        L = np.eye(3)
+        L[0, 0] = cos(yaw + rot_head)
+        L[0, 1] = -trans_head * sin(yaw + rot_head)
+        L[1, 0] = sin(yaw + rot_head)
+        L[1, 1] = trans_head * cos(yaw + rot_head)
+        L[2, 1] = 1
+        L[2, 2] = 1
+
+        A[0, 2] = - trans_head * sin(yaw + rot_head)
+        A[1, 2] = trans_head * cos(yaw + rot_head)
+        # P = A * P * A.T + M
+        P = A * P * A.T + L * M * L.T
+
+        P = 0.5 * (P + P.T)
+
+        # Save to temporary and logged variables
+        self.A = A
+        self.P = P
+        self.P_predict[:, :, index] = P
+
+        # print(self.P)
+
+        # Plot after the last messages
+        if index == ODOM_LIMIT:
+            print("Attempt #6")
+            # print(self.x_update)
+            # print(self.yaw_predict)
+            self.plot()
+            self.canvas()
 
 
 def main(args=None):
@@ -150,7 +388,7 @@ def main(args=None):
 
     server = Server()
 
-    # rclpy.spin(server)
+    rclpy.spin(server)
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
