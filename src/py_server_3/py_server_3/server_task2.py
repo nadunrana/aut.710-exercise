@@ -42,26 +42,38 @@ class Server(Node):
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
-        self.P = np.zeros((3, 3))
+        self.P = np.eye(3) * 0.1
         self.Q = np.zeros((3, 3))
         self.A = np.eye(3)
+        self.yaw = 0.0
+        # self.yaw = -3 * pi/4
 
         # Logged variables
         self.x_predict = np.zeros(ODOM_LIMIT + 1)
         self.y_predict = np.zeros(ODOM_LIMIT + 1)
         self.yaw_predict = np.zeros(ODOM_LIMIT + 1)
         self.P_predict = np.zeros((3, 3, ODOM_LIMIT + 1))
+        self.P_predict[:, :, 0] = self.P
+
+        self.yaw_predict[0] = self.yaw
 
         self.x_update = np.zeros(SENSOR_LIMIT + 1)
         self.y_update = np.zeros(SENSOR_LIMIT + 1)
         self.yaw_update = np.zeros(SENSOR_LIMIT + 1)
         self.P_update = np.zeros((3, 3, SENSOR_LIMIT + 1))
 
+        self.tspan1 = [0]
+        self.ts1 = 0
+        self.tspan2 = [0]
+        self.ts2 = 0
+
         self.wl = np.zeros(ODOM_LIMIT + 1)
         self.wr = np.zeros(ODOM_LIMIT + 1)
 
         self.dist_hat = np.zeros((3, SENSOR_LIMIT + 1))
         self.dist = np.zeros((3, SENSOR_LIMIT + 1))
+        self.dist[:, 0:1] = np.matrix(f'{np.sqrt(L0.T @ L0)}; {np.sqrt(L1.T @ L1)}; {np.sqrt(L2.T @ L2)}')
+        self.dist_hat[:, 0:1] = self.dist[:, 0:1]
 
         # Counter for indexing
         self.odom_count = 0
@@ -72,12 +84,12 @@ class Server(Node):
             JointState,
             '/landmarks',
             self.sensor_callback,
-            20)
+            40)
         self.odom_subscription = self.create_subscription(
             JointState,
             '/joint_states',
             self.odom_callback,
-            20)
+            40)
         self.sensor_subscription  # prevent unused variable warning
         self.odom_subscription
 
@@ -105,7 +117,7 @@ class Server(Node):
         # Initialization for animation and text labels
         predicted_coordinates = []
         updated_coordinates = []
-        predict, = ax.plot(0, 0, 'b+', markersize=2, label="Predicted position")
+        predict, = ax.plot(0, 0, 'bo', markersize=1, label="Predicted position")
         update, = ax.plot(0, 0, 'r--', linewidth=1, label="Updated position")
         ax.legend()
         text0 = plt.text(0.2, 0.1, "Time: 0.0", fontsize=10, horizontalalignment='center', verticalalignment='center',
@@ -131,8 +143,10 @@ class Server(Node):
                 # Updated position
                 i = int(index / 3)
                 updated_coordinates.append((self.x_update[i], self.y_update[i]))
-                text2.set_text(f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, {round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
-                text3.set_text(f"Measured Dist: {round(self.dist[0, i], 2)}, {round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
+                text2.set_text(
+                    f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, {round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
+                text3.set_text(
+                    f"Measured Dist: {round(self.dist[0, i], 2)}, {round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
                 x_update, y_update = zip(*updated_coordinates)
                 update.set_xdata(x_update)
                 update.set_ydata(y_update)
@@ -155,11 +169,14 @@ class Server(Node):
 
     def plot(self):
         # Create the time arrays
-        tspan1 = np.arange(0, INTERVAL * ODOM_LIMIT + 0.05, INTERVAL)
-        tspan2 = np.arange(0, 3 * INTERVAL * SENSOR_LIMIT + 0.05, 3 * INTERVAL)
+        # tspan1 = np.arange(0, INTERVAL * ODOM_LIMIT + 0.05, INTERVAL)
+        # tspan2 = np.arange(0, 3 * INTERVAL * SENSOR_LIMIT + 0.05, 3 * INTERVAL)
+        # print(tspan1 - self.tspan1, self.tspan1)
+        tspan1 = np.array(self.tspan1)
+        tspan2 = np.array(self.tspan2)
 
         # Plot the wheels velocity
-        fig1 = plt.figure(2)
+        fig1 = plt.figure(1)
         plt.plot(tspan1, self.wl, label="Left wheel")
         plt.plot(tspan1, self.wr, label="Right wheel")
         plt.grid(color='gray', linestyle='-', linewidth=0.5)
@@ -168,7 +185,7 @@ class Server(Node):
         plt.ylabel("Speed (rad/s)")
 
         # Plot the predicted and updated covariances
-        fig2 = plt.figure(3)
+        fig2 = plt.figure(2)
         plt.plot(tspan1, self.P_predict[0, 0, :], label="Predicted covariance of x")
         plt.plot(tspan1, self.P_predict[1, 1, :], label="Predicted covariance of y")
         plt.plot(tspan1, self.P_predict[2, 2, :], label="Predicted covariance of psi")
@@ -181,10 +198,10 @@ class Server(Node):
         plt.ylabel("Value")
 
         # Plot the predicted and measured distance to landmark
-        fig3 = plt.figure(4)
-        # plt.plot(tspan2, self.dist[0, :], label="Measured distance LM1")
-        # plt.plot(tspan2, self.dist[1, :], label="Measured distance LM2")
-        # plt.plot(tspan2, self.dist[2, :], label="Measured distance LM3")
+        fig3 = plt.figure(3)
+        plt.plot(tspan2, self.dist[0, :], label="Sorted distance 1")
+        plt.plot(tspan2, self.dist[1, :], label="Sorted distance 2")
+        plt.plot(tspan2, self.dist[2, :], label="Sorted distance 3")
         plt.plot(tspan2, self.dist_hat[0, :], label="Predicted distance LM1")
         plt.plot(tspan2, self.dist_hat[1, :], label="Predicted distance LM2")
         plt.plot(tspan2, self.dist_hat[2, :], label="Predicted distance LM3")
@@ -192,9 +209,40 @@ class Server(Node):
         plt.title("Distance to Landmarks")
         plt.xlabel("Time (s)")
         plt.ylabel("Distance")
+
+        fig4, axs4 = plt.subplots(3)
+        p_x = np.sqrt(self.P_predict[0, 0, :])
+        p_y = np.sqrt(self.P_predict[1, 1, :])
+        p_yaw = np.sqrt(self.P_predict[2, 2, :])
+
+        axs4[0].plot(tspan1, self.x_predict, label="X")
+        axs4[0].plot(tspan1, self.x_predict + p_x, label="X + Sigma")
+        axs4[0].plot(tspan1, self.x_predict - p_x, label="X - Sigma")
+        axs4[0].set_title("X versus Time")
+        axs4[0].set_xlabel("Time (s)")
+        axs4[0].set_ylabel("Value")
+        axs4[0].grid(color='gray', linestyle='-', linewidth=0.5)
+
+        axs4[1].plot(tspan1, self.y_predict, label="Y")
+        axs4[1].plot(tspan1, self.y_predict + p_y, label="Y + Sigma")
+        axs4[1].plot(tspan1, self.y_predict - p_y, label="Y - Sigma")
+        axs4[1].set_title("Y versus Time")
+        axs4[1].set_xlabel("Time (s)")
+        axs4[1].set_ylabel("Value")
+        axs4[1].grid(color='gray', linestyle='-', linewidth=0.5)
+
+        axs4[2].plot(tspan1, self.yaw_predict, label="Psi")
+        axs4[2].plot(tspan1, self.yaw_predict + p_yaw, label="Psi + Sigma")
+        axs4[2].plot(tspan1, self.yaw_predict - p_yaw, label="Psi - Sigma")
+        axs4[2].set_title("Psi versus Time")
+        axs4[2].set_xlabel("Time (s)")
+        axs4[2].set_ylabel("Value")
+        axs4[2].grid(color='gray', linestyle='-', linewidth=0.5)
+
         fig1.legend()
         fig2.legend()
         fig3.legend()
+        fig4.legend()
 
         # Show the plot but continue the thread
         plt.show(block=False)
@@ -203,12 +251,25 @@ class Server(Node):
         # Increase the counter and process the prediction
         self.odom_count += 1
         self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
-        self.step_calculation(msg.velocity[0], msg.velocity[1])
+        ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
+        if self.odom_count == 1:
+            self.tspan1.append(0.1)
+        else:
+            self.tspan1.append(ts - self.ts1 + self.tspan1[-1])
+        self.ts1 = ts
+        # print(self.tspan0[-1] - self.tspan0[-2], ts)
+        self.step_calculation(msg.velocity[0], msg.velocity[1], round(self.tspan1[-1] - self.tspan1[-2], 4))
 
     def sensor_callback(self, msg):
         # Increase the counter and process the update
         self.sensor_count += 1
         self.get_logger().info('Sensor says: #%d "%s"' % (self.sensor_count, msg.position))
+        ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
+        if self.ts2 == 0:
+            self.tspan2.append(msg.header.stamp.nanosec / 1e+9)
+        else:
+            self.tspan2.append(ts - self.ts2 + self.tspan2[-1])
+        self.ts2 = ts
         self.update(msg.position[0], msg.position[1], msg.position[2])
 
     def update(self, dist_0, dist_1, dist_2):
@@ -226,7 +287,6 @@ class Server(Node):
         z = np.array([dist_0, dist_1, dist_2])
         zh = np.array([dist_hat_0, dist_hat_1, dist_hat_2])
 
-
         H = np.zeros((3, 3))
         H[0, 0] = (x - L0[0, 0]) / dist_hat_0
         H[0, 1] = (y - L0[1, 0]) / dist_hat_0
@@ -236,68 +296,43 @@ class Server(Node):
         H[2, 1] = (y - L2[1, 0]) / dist_hat_2
 
         state = np.matrix(f'{x};{y};{yaw}')
+        temp = None
 
         for i in range(0, 3):
             vi = []
             Si = []
             for j in range(0, 3):
                 vij = z[i] - zh[j]
-                Sij = H[j:j + 1, 0:3] * P * H[j:j + 1, 0:3].T + R[j, j]
-                Xij = vij * vij / Sij
+                Sij = H[j:j + 1, 0:3] @ P @ H[j:j + 1, 0:3].T + R[j, j]
+                Xij = vij.T * np.linalg.inv(Sij) * vij
                 vi.append(Xij)
                 Si.append(Sij)
 
             j = np.argmin(vi)
-            K = P * H[j:j + 1, 0:3].T * np.linalg.inv(Si[j])
-            P = (np.eye(3) - K * H[j:j + 1, 0:3]) * P
+            K = P @ H[j:j + 1, 0:3].T * np.linalg.inv(Si[j])
+            P = (np.eye(3) - K @ H[j:j + 1, 0:3]) @ P
             P = 0.5 * (P + P.T)
             state = state + K * (z[i] - zh[j])
-            print("#" + str(i) + ":", z[i] - zh[j])
+            if self.dist[j, index] == 0.0:
+                self.dist[j, index] = z[i]
+            else:
+                temp = z[i]
+            print("#" + str(i) + "-" + str(j) + ":", z[i] - zh[j])
+            for k in range(0, 3):
+                print(round(z[i] - zh[k], 2), vi[k], end=" ")
+            print("\n")
+            if temp is not None:
+                for i in range(0, 3):
+                    if self.dist[i, index] == 0.0:
+                        self.dist[i, index] = temp
+                        break
 
-        """
-
-        V = z[:, np.newaxis] - zh
-
-        # z = np.matrix(f"{dist_0}; {dist_1}; {dist_2}")
-        # zhat = np.matrix(f"{dist_hat_0}; {dist_hat_1}; {dist_hat_2}")
-
-
-        
-        # H linearization
-        H = np.zeros((3, 3))
-        H[0, 0] = (x - L0[0, 0]) / dist_hat_0
-        H[0, 1] = (y - L0[1, 0]) / dist_hat_0
-        H[1, 0] = (x - L1[0, 0]) / dist_hat_1
-        H[1, 1] = (y - L1[1, 0]) / dist_hat_1
-        H[2, 0] = (x - L2[0, 0]) / dist_hat_2
-        H[2, 1] = (y - L2[1, 0]) / dist_hat_2
-
-        S = H * P * H.T + R
-        X = V.T * np.linalg.inv(S) * V
-        indices = np.argmin(X, axis=1)
-        print(indices, X)
-
-        state = np.matrix(f'{x};{y};{yaw}')
-
-        for i in range(0, 3):
-            j = int(indices[i])
-            h = np.zeros((3, 3))
-            h[j:j+1, 0:3] = H[j:j + 1, 0:3]
-            # K = P * H[j:j + 1, 0:3].T * np.linalg.inv(H[j:j + 1, 0:3] * P * H[j:j + 1, 0:3].T + R[j, j])
-            # P = (np.eye(3) - K * H[j:j + 1, 0:3]) * P
-            K = P * h.T * np.linalg.inv(h * P * h.T + R)
-            P = (np.eye(3) - K * h) * P
-            P = 0.5 * (P + P.T)
-            state = state + K * (z[i] - zh[j])
-            print("#" + str(i) + ":", z[i] - zh[j])
-        """
         # zhat = np.matrix(f'{z}')
 
         # Posterior
         # K = P * H.T * np.linalg.inv(H * P * H.T + R)
         # P_pos = (np.eye(3) - K * H) * P
         # updated_position = np.matrix(f'{x}; {y}; {yaw}') + K * (z - zhat)
-
 
         # Save to temporary variables and logged variables
         self.x = state[0, 0]
@@ -314,16 +349,14 @@ class Server(Node):
         self.dist_hat[0, index] = np.matrix(dist_hat_0)
         self.dist_hat[1, index] = np.matrix(dist_hat_1)
         self.dist_hat[2, index] = np.matrix(dist_hat_2)
+        print("Avg. distance diff:", np.sum(np.absolute(z - zh)))
         # self.dist[0, index] = np.matrix(dist_0)
         # self.dist[1, index] = np.matrix(dist_1)
         # self.dist[2, index] = np.matrix(dist_2)
 
-    def step_calculation(self, wl, wr):
-        wl = wl * pi / 30
-        wr = wr * pi / 30
-
-        rot_head = INTERVAL * Radius * (wr - wl) / (2 * D)
-        trans_head = INTERVAL * Radius * (wr + wl) / 2
+    def step_calculation(self, wl, wr, interval=INTERVAL):
+        rot_head = interval * Radius * (wr - wl) / (2 * D)
+        trans_head = interval * Radius * (wr + wl) / 2
 
         index = self.odom_count
         x = self.x
@@ -362,8 +395,9 @@ class Server(Node):
 
         A[0, 2] = - trans_head * sin(yaw + rot_head)
         A[1, 2] = trans_head * cos(yaw + rot_head)
+
         # P = A * P * A.T + M
-        P = A * P * A.T + L * M * L.T
+        P = A @ P @ A.T + L @ M @ L.T
 
         P = 0.5 * (P + P.T)
 
