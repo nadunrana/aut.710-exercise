@@ -5,10 +5,6 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package='py_server_1',
-            executable='task2'
-        ),
-        Node(
-            package='py_server_1',
-            executable='task3'
+            executable='server'
         )
     ])

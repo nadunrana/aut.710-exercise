@@ -20,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'task2 = py_server_1.server_task2:main',
-            'task3 = py_server_1.server_task3:main'
+            'server = py_server_1.server:main'
         ],
     },
 )

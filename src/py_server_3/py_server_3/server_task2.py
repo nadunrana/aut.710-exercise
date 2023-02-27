@@ -1,18 +1,7 @@
-# Copyright 2016 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Fundamental of Mobile Robot - AUT.710 - 2023
+# Exercise 03 - Problem 02
+# Hoang Pham, Nadun Ranasinghe
 
-# import csv
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -41,12 +30,14 @@ class Server(Node):
         # Temporary variables
         self.x = 0.0
         self.y = 0.0
-        self.yaw = 0.0
+        # self.yaw = 0.0
+        self.yaw = -3 * pi / 4
         self.P = np.eye(3) * 0.1
         self.Q = np.zeros((3, 3))
         self.A = np.eye(3)
-        self.yaw = 0.0
-        # self.yaw = -3 * pi/4
+
+        self.ts1 = 0
+        self.ts2 = 0
 
         # Logged variables
         self.x_predict = np.zeros(ODOM_LIMIT + 1)
@@ -54,7 +45,6 @@ class Server(Node):
         self.yaw_predict = np.zeros(ODOM_LIMIT + 1)
         self.P_predict = np.zeros((3, 3, ODOM_LIMIT + 1))
         self.P_predict[:, :, 0] = self.P
-
         self.yaw_predict[0] = self.yaw
 
         self.x_update = np.zeros(SENSOR_LIMIT + 1)
@@ -63,9 +53,7 @@ class Server(Node):
         self.P_update = np.zeros((3, 3, SENSOR_LIMIT + 1))
 
         self.tspan1 = [0]
-        self.ts1 = 0
         self.tspan2 = [0]
-        self.ts2 = 0
 
         self.wl = np.zeros(ODOM_LIMIT + 1)
         self.wr = np.zeros(ODOM_LIMIT + 1)
@@ -74,29 +62,17 @@ class Server(Node):
         self.dist = np.zeros((3, SENSOR_LIMIT + 1))
         self.dist[:, 0:1] = np.matrix(f'{np.sqrt(L0.T @ L0)}; {np.sqrt(L1.T @ L1)}; {np.sqrt(L2.T @ L2)}')
         self.dist_hat[:, 0:1] = self.dist[:, 0:1]
+        self.mahalanobis = np.zeros((3, SENSOR_LIMIT + 1))
 
         # Counter for indexing
         self.odom_count = 0
         self.sensor_count = 0
 
         # Subscriber
-        self.sensor_subscription = self.create_subscription(
-            JointState,
-            '/landmarks',
-            self.sensor_callback,
-            40)
-        self.odom_subscription = self.create_subscription(
-            JointState,
-            '/joint_states',
-            self.odom_callback,
-            40)
+        self.sensor_subscription = self.create_subscription(JointState, '/landmarks', self.sensor_callback, 40)
+        self.odom_subscription = self.create_subscription(JointState, '/joint_states', self.odom_callback, 40)
         self.sensor_subscription  # prevent unused variable warning
         self.odom_subscription
-
-        # while self.odom_count < ODOM_LIMIT:
-        #     rclpy.spin_once(self)
-        #
-        # self.plot()
 
     def canvas(self):
         # Turn on interactive mode
@@ -136,20 +112,22 @@ class Server(Node):
             x_predict, y_predict = zip(*predicted_coordinates)
             predict.set_xdata(x_predict)
             predict.set_ydata(y_predict)
-            text0.set_text(f"Time: {round(index * INTERVAL, 2)}")
+            text0.set_text(f"Time: {round(self.tspan1[index], 2)}")
             text1.set_text(f"Coordinate: {round(self.x_predict[index], 2)}, {round(self.y_predict[index], 2)}")
 
             if index % 3 == 0:
                 # Updated position
                 i = int(index / 3)
                 updated_coordinates.append((self.x_update[i], self.y_update[i]))
-                text2.set_text(
-                    f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, {round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
-                text3.set_text(
-                    f"Measured Dist: {round(self.dist[0, i], 2)}, {round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
+                text2.set_text(f"Predicted Dist: {round(self.dist_hat[0, i], 2)}, "
+                               f"{round(self.dist_hat[1, i], 2)}, {round(self.dist_hat[2, i], 2)}")
+                text3.set_text(f"Measured Dist: {round(self.dist[0, i], 2)}, "
+                               f"{round(self.dist[1, i], 2)}, {round(self.dist[2, i], 2)}")
+
                 x_update, y_update = zip(*updated_coordinates)
                 update.set_xdata(x_update)
                 update.set_ydata(y_update)
+
                 lambda_, v = np.linalg.eig(self.P_update[:, :, i])
                 ell = Ellipse(xy=(self.x_update[i], self.y_update[i]),
                               width=lambda_[0] * 2, height=lambda_[1] * 2,
@@ -169,9 +147,6 @@ class Server(Node):
 
     def plot(self):
         # Create the time arrays
-        # tspan1 = np.arange(0, INTERVAL * ODOM_LIMIT + 0.05, INTERVAL)
-        # tspan2 = np.arange(0, 3 * INTERVAL * SENSOR_LIMIT + 0.05, 3 * INTERVAL)
-        # print(tspan1 - self.tspan1, self.tspan1)
         tspan1 = np.array(self.tspan1)
         tspan2 = np.array(self.tspan2)
 
@@ -239,10 +214,21 @@ class Server(Node):
         axs4[2].set_ylabel("Value")
         axs4[2].grid(color='gray', linestyle='-', linewidth=0.5)
 
+        fig5 = plt.figure(5)
+        plt.plot(tspan2, self.mahalanobis[0, :], label="Landmark 1")
+        plt.plot(tspan2, self.mahalanobis[1, :], label="Landmark 2")
+        plt.plot(tspan2, self.mahalanobis[2, :], label="Landmark 3")
+        plt.grid(color='gray', linestyle='-', linewidth=0.5)
+        plt.title("Mahalanobis Distance to Landmarks")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Distance")
+
+        # Finish the plot
         fig1.legend()
         fig2.legend()
         fig3.legend()
         fig4.legend()
+        fig5.legend()
 
         # Show the plot but continue the thread
         plt.show(block=False)
@@ -250,29 +236,38 @@ class Server(Node):
     def odom_callback(self, msg):
         # Increase the counter and process the prediction
         self.odom_count += 1
-        self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
+        # self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
+
+        # Calculate dt and save the timestamp
         ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
         if self.odom_count == 1:
             self.tspan1.append(0.1)
         else:
             self.tspan1.append(ts - self.ts1 + self.tspan1[-1])
+
         self.ts1 = ts
-        # print(self.tspan0[-1] - self.tspan0[-2], ts)
+
+        # Prediction
         self.step_calculation(msg.velocity[0], msg.velocity[1], round(self.tspan1[-1] - self.tspan1[-2], 4))
 
     def sensor_callback(self, msg):
         # Increase the counter and process the update
         self.sensor_count += 1
         self.get_logger().info('Sensor says: #%d "%s"' % (self.sensor_count, msg.position))
+
+        # Calculate dt and save the timestamp
         ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
         if self.ts2 == 0:
             self.tspan2.append(msg.header.stamp.nanosec / 1e+9)
         else:
             self.tspan2.append(ts - self.ts2 + self.tspan2[-1])
         self.ts2 = ts
+
+        # Update
         self.update(msg.position[0], msg.position[1], msg.position[2])
 
     def update(self, dist_0, dist_1, dist_2):
+        # Extract the last value of P, x, y, psi
         index = self.sensor_count
         P = self.P
         x = self.x
@@ -284,55 +279,60 @@ class Server(Node):
         dist_hat_1 = sqrt((x - L1[0, 0]) ** 2 + (y - L1[1, 0]) ** 2)
         dist_hat_2 = sqrt((x - L2[0, 0]) ** 2 + (y - L2[1, 0]) ** 2)
 
+        # Actual and Predicted Measurement vectors
         z = np.array([dist_0, dist_1, dist_2])
         zh = np.array([dist_hat_0, dist_hat_1, dist_hat_2])
 
+        # H linearization
         H = np.zeros((3, 3))
-        H[0, 0] = (x - L0[0, 0]) / dist_hat_0
-        H[0, 1] = (y - L0[1, 0]) / dist_hat_0
-        H[1, 0] = (x - L1[0, 0]) / dist_hat_1
-        H[1, 1] = (y - L1[1, 0]) / dist_hat_1
-        H[2, 0] = (x - L2[0, 0]) / dist_hat_2
-        H[2, 1] = (y - L2[1, 0]) / dist_hat_2
+        H[0, :] = np.matrix([x - L0[0, 0], y - L0[1, 0], 0]) / dist_hat_0
+        H[1, :] = np.matrix([x - L1[0, 0], y - L1[1, 0], 0]) / dist_hat_1
+        H[2, :] = np.matrix([x - L2[0, 0], y - L2[1, 0], 0]) / dist_hat_2
 
+        # Predicted state vector
         state = np.matrix(f'{x};{y};{yaw}')
+
+        # In case there is duplication
         temp = None
 
+        # Iterate through each actual measurement ith
         for i in range(0, 3):
-            vi = []
+            Xi = []
             Si = []
+
+            # Iterate through each predicted measurement jth
             for j in range(0, 3):
                 vij = z[i] - zh[j]
-                Sij = H[j:j + 1, 0:3] @ P @ H[j:j + 1, 0:3].T + R[j, j]
+                Sij = H[j:j + 1, 0:3] @ P @ H[j:j + 1, 0:3].T + R[j, j] # covariance of innovation
                 Xij = vij.T * np.linalg.inv(Sij) * vij
-                vi.append(Xij)
+                Xi.append(Xij)
                 Si.append(Sij)
 
-            j = np.argmin(vi)
+            # Choose the minimum one
+            j = np.argmin(Xi)
+
+            # Update the state and covariances by using the matched measurement
             K = P @ H[j:j + 1, 0:3].T * np.linalg.inv(Si[j])
             P = (np.eye(3) - K @ H[j:j + 1, 0:3]) @ P
             P = 0.5 * (P + P.T)
             state = state + K * (z[i] - zh[j])
+
+            self.mahalanobis[j, index] = Xi[j]
+
+            # Save the actual measurement, save to temp if duplicated
             if self.dist[j, index] == 0.0:
                 self.dist[j, index] = z[i]
             else:
                 temp = z[i]
-            print("#" + str(i) + "-" + str(j) + ":", z[i] - zh[j])
-            for k in range(0, 3):
-                print(round(z[i] - zh[k], 2), vi[k], end=" ")
-            print("\n")
+
+
+            # Fill the duplicated actual measurement that did not have a match
+            # Choose the empty one for later plot
             if temp is not None:
                 for i in range(0, 3):
                     if self.dist[i, index] == 0.0:
                         self.dist[i, index] = temp
                         break
-
-        # zhat = np.matrix(f'{z}')
-
-        # Posterior
-        # K = P * H.T * np.linalg.inv(H * P * H.T + R)
-        # P_pos = (np.eye(3) - K * H) * P
-        # updated_position = np.matrix(f'{x}; {y}; {yaw}') + K * (z - zhat)
 
         # Save to temporary variables and logged variables
         self.x = state[0, 0]
@@ -344,25 +344,22 @@ class Server(Node):
         self.y_update[index] = state[1, 0]
         self.yaw_update[index] = state[2, 0]
         self.P_update[:, :, index] = P
-        print("State diff:", state[0, 0] - x, state[1, 0] - y)
 
         self.dist_hat[0, index] = np.matrix(dist_hat_0)
         self.dist_hat[1, index] = np.matrix(dist_hat_1)
         self.dist_hat[2, index] = np.matrix(dist_hat_2)
-        print("Avg. distance diff:", np.sum(np.absolute(z - zh)))
-        # self.dist[0, index] = np.matrix(dist_0)
-        # self.dist[1, index] = np.matrix(dist_1)
-        # self.dist[2, index] = np.matrix(dist_2)
+        print(f"Total distance diff #{self.sensor_count}:",
+              np.sum(np.absolute(self.dist[:, index] - self.dist_hat[:, index])))
 
     def step_calculation(self, wl, wr, interval=INTERVAL):
         rot_head = interval * Radius * (wr - wl) / (2 * D)
         trans_head = interval * Radius * (wr + wl) / 2
 
+        # Extract the last value of the robot state, A, and P matrix
         index = self.odom_count
         x = self.x
         y = self.y
         yaw = self.yaw
-
         A = self.A
         P = self.P
 
@@ -370,10 +367,10 @@ class Server(Node):
         self.wl[index] = wl
         self.wr[index] = wr
 
+        # Function f
         x_predict = x + trans_head * cos(yaw + rot_head)
         y_predict = y + trans_head * sin(yaw + rot_head)
         yaw_predict = yaw + rot_head * 2
-        # print(round(yaw_predict, 4))
 
         # Calculate the predicted positions and save to temporary and logged variables
         self.x_predict[index] = x_predict
@@ -386,19 +383,15 @@ class Server(Node):
 
         # Linearization
         L = np.eye(3)
-        L[0, 0] = cos(yaw + rot_head)
-        L[0, 1] = -trans_head * sin(yaw + rot_head)
-        L[1, 0] = sin(yaw + rot_head)
-        L[1, 1] = trans_head * cos(yaw + rot_head)
-        L[2, 1] = 1
-        L[2, 2] = 1
+        L[0, :] = np.matrix([cos(yaw + rot_head), -trans_head * sin(yaw + rot_head), 0])
+        L[1, :] = np.matrix([sin(yaw + rot_head), trans_head * cos(yaw + rot_head), 0])
+        L[2, :] = np.matrix([0, 1, 1])
 
         A[0, 2] = - trans_head * sin(yaw + rot_head)
         A[1, 2] = trans_head * cos(yaw + rot_head)
 
-        # P = A * P * A.T + M
+        # Calculate new covariances matrix
         P = A @ P @ A.T + L @ M @ L.T
-
         P = 0.5 * (P + P.T)
 
         # Save to temporary and logged variables
@@ -406,13 +399,9 @@ class Server(Node):
         self.P = P
         self.P_predict[:, :, index] = P
 
-        # print(self.P)
 
         # Plot after the last messages
         if index == ODOM_LIMIT:
-            print("Attempt #6")
-            # print(self.x_update)
-            # print(self.yaw_predict)
             self.plot()
             self.canvas()
 

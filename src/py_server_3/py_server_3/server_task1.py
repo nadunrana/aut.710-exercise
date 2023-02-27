@@ -1,18 +1,7 @@
-# Copyright 2016 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Fundamental of Mobile Robot - AUT.710 - 2023
+# Exercise 03 - Problem 01
+# Hoang Pham, Nadun Ranasinghe
 
-# import csv
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -32,11 +21,6 @@ R = np.eye(6) * 0.000025
 M = np.matrix('0.001, 0, 0; 0, 0.0002, 0; 0, 0, 0.0002')
 
 
-# L0 = np.matrix('7.3; -4.5')
-# L1 = np.matrix('-5.5; 8.3')
-# L2 = np.matrix('-7.5; -6.3')
-
-
 class Server(Node):
     def __init__(self):
         super().__init__('minimal_subscriber')
@@ -44,17 +28,14 @@ class Server(Node):
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
-        # self.yaw = pi/4
-        # self.L0 = np.zeros((2, 1))
-        # self.L1 = np.zeros((2, 1))
-        # self.L2 = np.zeros((2, 1))
-        self.L0 = np.matrix('10;0')
-        self.L1 = np.matrix('10;10')
-        self.L2 = np.matrix('0;10')
-        # self.P = np.zeros((9, 9))
+        self.L0 = np.matrix('10; 0')
+        self.L1 = np.matrix('10; 10')
+        self.L2 = np.matrix('0; 10')
         self.P = np.eye(9) * 0.1
         self.Q = np.zeros((9, 9))
         self.A = np.eye(9)
+        self.ts1 = 0
+        self.ts2 = 0
 
         # Logged variables
         self.x_predict = np.zeros(ODOM_LIMIT + 1)
@@ -77,9 +58,7 @@ class Server(Node):
         self.P_update[:, :, 0] = self.P
 
         self.tspan1 = [0]
-        self.ts1 = 0
         self.tspan2 = [0]
-        self.ts2 = 0
 
         self.wl = np.zeros(ODOM_LIMIT + 1)
         self.wr = np.zeros(ODOM_LIMIT + 1)
@@ -92,24 +71,10 @@ class Server(Node):
         self.sensor_count = 0
 
         # Subscriber
-        self.sensor_subscription = self.create_subscription(
-            JointState,
-            '/landmarks',
-            self.sensor_callback,
-            20)
-        self.odom_subscription = self.create_subscription(
-            JointState,
-            '/joint_states',
-            self.odom_callback,
-            20)
-
+        self.sensor_subscription = self.create_subscription(JointState, '/landmarks', self.sensor_callback, 20)
+        self.odom_subscription = self.create_subscription(JointState, '/joint_states', self.odom_callback, 20)
         self.sensor_subscription  # prevent unused variable warning
         self.odom_subscription
-
-        # while self.odom_count < ODOM_LIMIT:
-        #     rclpy.spin_once(self)
-        #
-        # self.plot()
 
     def canvas(self):
         # Turn on interactive mode
@@ -133,14 +98,14 @@ class Server(Node):
         predict, = ax.plot(0, 0, 'b+', markersize=1, label="Predicted position")
         update, = ax.plot(0, 0, 'r--', linewidth=1, label="Updated position")
         ax.legend()
-        text0 = plt.text(0.2, 0.1, "Time: 0.0", fontsize=10, horizontalalignment='center', verticalalignment='center',
-                         transform=ax.transAxes)
+        text0 = plt.text(0.2, 0.1, "Time: 0.0", fontsize=10, horizontalalignment='center',
+                         verticalalignment='center', transform=ax.transAxes)
         text1 = plt.text(0.2, 0.2, "Coordinate: 0.0, 0.0", fontsize=10, horizontalalignment='center',
                          verticalalignment='center', transform=ax.transAxes)
-        text2 = plt.text(0.2, 0.3, "Predicted Meas: 0.0 , 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
-                         verticalalignment='center', transform=ax.transAxes)
-        text3 = plt.text(0.2, 0.4, "Measured Meas: 0.0, 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10, horizontalalignment='center',
-                         verticalalignment='center', transform=ax.transAxes)
+        text2 = plt.text(0.2, 0.3, "Predicted Meas: 0.0 , 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10,
+                         horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+        text3 = plt.text(0.2, 0.4, "Measured Meas: 0.0, 0.0, 0.0, 0.0, 0.0, 0.0", fontsize=10,
+                         horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
 
         # Iterate through time array to plot the robot position and update state and measurement
         for index in range(0, ODOM_LIMIT):
@@ -149,20 +114,25 @@ class Server(Node):
             x_predict, y_predict = zip(*predicted_coordinates)
             predict.set_xdata(x_predict)
             predict.set_ydata(y_predict)
-            text0.set_text(f"Time: {round(index * INTERVAL, 2)}")
+            text0.set_text(f"Time: {round(self.tspan1[index], 2)}")
             text1.set_text(f"Coordinate: {round(self.x_predict[index], 2)}, {round(self.y_predict[index], 2)}")
 
             if index % 3 == 0:
                 # Updated position
                 i = int(index / 3)
                 updated_coordinates.append((self.x_update[i], self.y_update[i]))
-                text2.set_text(
-                    f"Predicted Dist: {round(self.measure_hat[0, i], 2)}, {round(self.measure_hat[1, i], 2)}, {round(self.measure_hat[2, i], 2)}, {round(self.measure_hat[3, i], 2)}, {round(self.measure_hat[4, i], 2)}, {round(self.measure_hat[5, i], 2)}")
-                text3.set_text(
-                    f"Measured Dist: {round(self.measure[0, i], 2)}, {round(self.measure[1, i], 2)}, {round(self.measure[2, i], 2)}, {round(self.measure[3, i], 2)}, {round(self.measure[4, i], 2)}, {round(self.measure[5, i], 2)}")
+
+                text2.set_text(f"Predicted: {round(self.measure_hat[0, i], 2)}, {round(self.measure_hat[1, i], 2)}, "
+                               f"{round(self.measure_hat[2, i], 2)}, {round(self.measure_hat[3, i], 2)}, "
+                               f"{round(self.measure_hat[4, i], 2)}, {round(self.measure_hat[5, i], 2)}")
+                text3.set_text(f"Measured: {round(self.measure[0, i], 2)}, {round(self.measure[1, i], 2)}, "
+                               f"{round(self.measure[2, i], 2)}, {round(self.measure[3, i], 2)}, "
+                               f"{round(self.measure[4, i], 2)}, {round(self.measure[5, i], 2)}")
+
                 x_update, y_update = zip(*updated_coordinates)
                 update.set_xdata(x_update)
                 update.set_ydata(y_update)
+
                 lambda_, v = np.linalg.eig(self.P_update[0:3, 0:3, i])
                 ell = Ellipse(xy=(self.x_update[i], self.y_update[i]),
                               width=lambda_[0] * 2, height=lambda_[1] * 2,
@@ -182,8 +152,6 @@ class Server(Node):
 
     def plot(self):
         # Create the time arrays
-        # tspan1 = np.arange(0, INTERVAL * 409 - 0.05, INTERVAL)
-        # tspan2 = np.arange(0, 3 * INTERVAL * 137 - 0.01, 3 * INTERVAL)
         tspan1 = np.array(self.tspan1)
         tspan2 = np.array(self.tspan2)
 
@@ -260,6 +228,7 @@ class Server(Node):
         p_x2 = np.sqrt(self.P_update[7, 7, :])
         p_y2 = np.sqrt(self.P_update[8, 8, :])
 
+        # Plot the landmark coordinate with +/- standard deviation
         axs6[0].plot(tspan2, self.L0_update[0, :], label="LM0")
         axs6[0].plot(tspan2, self.L0_update[0, :] + p_x0, label="LM0 + Sigma")
         axs6[0].plot(tspan2, self.L0_update[0, :] - p_x0, label="LM0 - Sigma")
@@ -288,6 +257,7 @@ class Server(Node):
         axs6[1].set_ylabel("Value")
         axs6[1].grid(color='gray', linestyle='-', linewidth=0.5)
 
+        # Finish the plot
         fig1.legend()
         fig2.legend()
         fig3.legend()
@@ -297,44 +267,55 @@ class Server(Node):
 
         # Show the plot but continue the thread
         plt.show(block=False)
-        # plt.show()
 
     def odom_callback(self, msg):
         # Increase the counter and process the prediction
         self.odom_count += 1
-        self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
+        # self.get_logger().info('Odom says: #%d "%s"' % (self.odom_count, msg.velocity))
+
+        # Calculate dt and save the timestamp
         ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
+
         if self.odom_count == 1:
             self.tspan1.append(0.1)
         else:
             self.tspan1.append(ts - self.ts1 + self.tspan1[-1])
+
         self.ts1 = ts
+
+        # Prediction
         self.step_calculation(msg.velocity[0], msg.velocity[1], round(self.tspan1[-1] - self.tspan1[-2], 4))
 
     def sensor_callback(self, msg):
         # Increase the counter and process the update
         self.sensor_count += 1
-        self.get_logger().info('Sensor says: #%d "%s %s"' % (self.sensor_count, msg.position, msg.velocity))
+        # self.get_logger().info('Sensor says: #%d "%s %s"' % (self.sensor_count, msg.position, msg.velocity))
+
+        # Calculate dt and save the timestamp
         ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9
+
         if self.ts2 == 0:
             self.tspan2.append(msg.header.stamp.nanosec / 1e+9)
         else:
             self.tspan2.append(ts - self.ts2 + self.tspan2[-1])
         self.ts2 = ts
+
+        # Update
         self.update(msg.position[0], msg.position[1], msg.position[2],
                     msg.velocity[0], msg.velocity[1], msg.velocity[2])
 
     def update(self, dist_0, dist_1, dist_2, bear_0, bear_1, bear_2):
+        # Extract the last value of P, x, y, psi, L0, L1, L2
         index = self.sensor_count
         P_neg = self.P
         x = self.x
         y = self.y
         yaw = self.yaw
-
         L0 = self.L0
         L1 = self.L1
         L2 = self.L2
 
+        # Convert degree to radian
         bear_0 = bear_0 * pi / 180
         bear_1 = bear_1 * pi / 180
         bear_2 = bear_2 * pi / 180
@@ -347,86 +328,80 @@ class Server(Node):
         bear_hat_1 = regulate(np.arctan2(L1[0, 0] - x, L1[1, 0] - y) - yaw)
         bear_hat_2 = regulate(np.arctan2(L2[0, 0] - x, L2[1, 0] - y) - yaw)
 
+        # Create measurement vector
         z = np.matrix(f"{dist_0};{dist_1};{dist_2};{bear_0};{bear_1};{bear_2}")
         zhat = np.matrix(f"{dist_hat_0};{dist_hat_1};{dist_hat_2};{bear_hat_0};{bear_hat_1};{bear_hat_2}")
 
         # H linearization
+        dx0 = x - L0[0, 0]
+        dx1 = x - L1[0, 0]
+        dx2 = x - L2[0, 0]
+        dy0 = y - L0[1, 0]
+        dy1 = y - L1[1, 0]
+        dy2 = y - L2[1, 0]
+
         H = np.zeros((6, 9))
-        H[0, :] = np.matrix([x - L0[0, 0], y - L0[1, 0], 0,
-                             L0[0, 0] - x, L0[1, 0] - y, 0,
-                             0, 0, 0]) / dist_hat_0
-
-        H[1, :] = np.matrix([x - L1[0, 0], y - L1[1, 0], 0,
-                             0, 0, L1[0, 0] - x,
-                             L1[1, 0] - y, 0, 0]) / dist_hat_1
-
-        H[2, :] = np.matrix([x - L2[0, 0], y - L2[1, 0], 0,
-                             0, 0, 0,
-                             0, L2[0, 0] - x, L2[1, 0] - y]) / dist_hat_2
-
-        H[3, :] = np.matrix([y - L0[1, 0], L0[0, 0] - x, -(dist_hat_0 ** 2),
-                             L0[1, 0] - y, x - L0[0, 0], 0,
-                             0, 0, 0]) / (dist_hat_0 ** 2)
-
-        H[4, :] = np.matrix([y - L1[1, 0], L1[0, 0] - x, -(dist_hat_1 ** 2),
-                             0, 0, L1[1, 0] - y,
-                             x - L1[0, 0], 0, 0]) / (dist_hat_1 ** 2)
-
-        H[5, :] = np.matrix([y - L2[1, 0], L2[0, 0] - x, -(dist_hat_2 ** 2),
-                             0, 0, 0,
-                             0, L2[1, 0] - y, x - L2[0, 0]]) / (dist_hat_2 ** 2)
+        H[0, :] = np.matrix([dx0,  dy0, 0, -dx0, -dy0, 0, 0, 0, 0]) / dist_hat_0
+        H[1, :] = np.matrix([dx1,  dy1, 0, 0, 0, -dx1, -dy1, 0, 0]) / dist_hat_1
+        H[2, :] = np.matrix([dx2,  dy2, 0, 0, 0, 0, 0, -dx2, -dy2]) / dist_hat_2
+        H[3, :] = np.matrix([dy0, -dx0, -(dist_hat_0 ** 2), -dy0, dx0, 0, 0, 0, 0]) / (dist_hat_0 ** 2)
+        H[4, :] = np.matrix([dy1, -dx1, -(dist_hat_1 ** 2), 0, 0, -dy1, dx1, 0, 0]) / (dist_hat_1 ** 2)
+        H[5, :] = np.matrix([dy2, -dx2, -(dist_hat_2 ** 2), 0, 0, 0, 0, -dy2, dx2]) / (dist_hat_2 ** 2)
 
         # Posterior
         K = P_neg @ H.T @ np.linalg.inv(H @ P_neg @ H.T + R)
         # print(H)
         P = (np.eye(9) - K @ H) @ P_neg
         P_pos = 0.5 * (P + P.T)
-        updated_position = np.matrix(f'{x};{y};{yaw};{L0[0, 0]}; {L0[1, 0]};{L1[0, 0]}; {L1[1, 0]}; {L2[0, 0]}; {L2[1, 0]}') + K @ (z - zhat)
-        # print(updated_position)
-        # Save to temporary variables and logged variables
-        self.x = updated_position[0, 0]
-        self.y = updated_position[1, 0]
-        self.yaw = updated_position[2, 0]
-        self.P = P_pos
-        self.L0 = updated_position[3:5, 0]
-        self.L1 = updated_position[5:7, 0]
-        self.L2 = updated_position[7:9, 0]
-        # print(self.L0_update[:, index:index + 1], updated_position[3:5, 0])
-        self.L0_update[:, index:index + 1] = updated_position[3:5, 0]
-        self.L1_update[:, index:index + 1] = updated_position[5:7, 0]
-        self.L2_update[:, index:index + 1] = updated_position[7:9, 0]
+        old_state = np.matrix(f'{x};{y};{yaw};{L0[0, 0]}; {L0[1, 0]};{L1[0, 0]}; {L1[1, 0]}; {L2[0, 0]}; {L2[1, 0]}')
+        new_state = old_state + K @ (z - zhat)
 
-        self.x_update[index] = updated_position[0, 0]
-        self.y_update[index] = updated_position[1, 0]
-        self.yaw_update[index] = updated_position[2, 0]
+        # Save to temporary variables and logged variables
+        self.x = new_state[0, 0]
+        self.y = new_state[1, 0]
+        self.yaw = new_state[2, 0]
+        self.P = P_pos
+        self.L0 = new_state[3:5, 0]
+        self.L1 = new_state[5:7, 0]
+        self.L2 = new_state[7:9, 0]
+
+        # Save new location coordinates
+        self.L0_update[:, index:index + 1] = new_state[3:5, 0]
+        self.L1_update[:, index:index + 1] = new_state[5:7, 0]
+        self.L2_update[:, index:index + 1] = new_state[7:9, 0]
+
+        # Save new robot state and covariances matrix
+        self.x_update[index] = new_state[0, 0]
+        self.y_update[index] = new_state[1, 0]
+        self.yaw_update[index] = new_state[2, 0]
         self.P_update[:, :, index] = P_pos
-        print("Measure Diff:", dist_0 - dist_hat_0, dist_1 - dist_hat_1, dist_2 - dist_hat_2,
-                               bear_0 - bear_hat_0, bear_1 - bear_hat_1, bear_2 - bear_hat_2)
-        # print("New Landmark:", self.L0, self.L1, self.L2)
+        # print("Measure Diff:", dist_0 - dist_hat_0, dist_1 - dist_hat_1, dist_2 - dist_hat_2,
+        #                        bear_0 - bear_hat_0, bear_1 - bear_hat_1, bear_2 - bear_hat_2)
+
+        # Save the measurement of the current timestamp
         self.measure_hat[:, index:index + 1] = zhat
         self.measure[:, index:index + 1] = z
-
 
     def step_calculation(self, wl, wr, interval=INTERVAL):
         rot_head = interval * Radius * (wr - wl) / (2 * D)
         trans_head = interval * Radius * (wr + wl) / 2
 
+        # Extract the last value of the robot state, A, and P matrix
         index = self.odom_count
         x = self.x
         y = self.y
         yaw = self.yaw
-
         A = self.A
         P = self.P
 
-        # Log the wheels speed
+        # Save the wheels speed
         self.wl[index] = wl
         self.wr[index] = wr
 
+        # Function f
         x_predict = x + trans_head * cos(yaw + rot_head)
         y_predict = y + trans_head * sin(yaw + rot_head)
         yaw_predict = yaw + rot_head * 2
-        # print(round(yaw_predict, 4))
 
         # Calculate the predicted positions and save to temporary and logged variables
         self.x_predict[index] = x_predict
@@ -438,36 +413,25 @@ class Server(Node):
         self.yaw = yaw_predict
 
         # Linearization
-        # L = np.eye(9)
         L = np.zeros((9, 3))
-        L[0, 0] = cos(yaw + rot_head)
-        L[0, 1] = -trans_head * sin(yaw + rot_head)
-        L[1, 0] = sin(yaw + rot_head)
-        L[1, 1] = trans_head * cos(yaw + rot_head)
-        L[2, 1] = 1
-        L[2, 2] = 1
+        L[0, :] = np.matrix([cos(yaw + rot_head), -trans_head * sin(yaw + rot_head), 0])
+        L[1, :] = np.matrix([sin(yaw + rot_head), trans_head * cos(yaw + rot_head), 0])
+        L[2, :] = np.matrix([0, 1, 1])
 
         A[0, 2] = - trans_head * sin(yaw + rot_head)
         A[1, 2] = trans_head * cos(yaw + rot_head)
-        # P = A * P * A.T + M
-        # print(L)
-        # print(M)
 
+        # Calculate new covariances matrix
         P = A @ P @ A.T + L @ M @ L.T
         P = 0.5 * (P + P.T)
-        # np.matmul(np.matmul(L, M).reshape((3, 3)), L.T).reshape((9, 9))
+
         # Save to temporary and logged variables
         self.A = A
         self.P = P
         self.P_predict[:, :, index] = P
 
-        # print(self.A)
-
         # Plot after the last messages
         if index == ODOM_LIMIT:
-            # print(self.x_predict.shape, self.x_update.shape)
-            # print(self.x_update)
-            # print(self.yaw_predict)
             self.plot()
             self.canvas()
 
@@ -478,6 +442,7 @@ def regulate(angle):
     elif angle > pi:
         angle -= 2 * pi
     return angle
+
 
 def main(args=None):
     rclpy.init(args=args)
