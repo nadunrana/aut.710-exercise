@@ -30,8 +30,8 @@ class Server(Node):
         # Temporary variables
         self.x = 0.0
         self.y = 0.0
-        # self.yaw = 0.0
-        self.yaw = -3 * pi / 4
+        self.yaw = 0.0
+        # self.yaw = -4.8 * pi / 6
         self.P = np.eye(3) * 0.1
         self.Q = np.zeros((3, 3))
         self.A = np.eye(3)
@@ -86,9 +86,9 @@ class Server(Node):
         plt.ylabel("Y-Axis")
 
         # Landmarks
-        plt.plot(L0[0, 0], L0[1, 0], linestyle='None', marker="o", label='Landmark 0')
-        plt.plot(L1[0, 0], L1[1, 0], linestyle='None', marker="o", label='Landmark 1')
-        plt.plot(L2[0, 0], L2[1, 0], linestyle='None', marker="o", label='Landmark 2')
+        plt.plot(L0[0, 0], L0[1, 0], linestyle='None', marker="o", label='Landmark 1')
+        plt.plot(L1[0, 0], L1[1, 0], linestyle='None', marker="o", label='Landmark 2')
+        plt.plot(L2[0, 0], L2[1, 0], linestyle='None', marker="o", label='Landmark 3')
 
         # Initialization for animation and text labels
         predicted_coordinates = []
@@ -248,12 +248,12 @@ class Server(Node):
         self.ts1 = ts
 
         # Prediction
-        self.step_calculation(msg.velocity[0], msg.velocity[1], round(self.tspan1[-1] - self.tspan1[-2], 4))
+        self.step_calculation(msg.velocity[1], msg.velocity[0], round(self.tspan1[-1] - self.tspan1[-2], 4))
 
     def sensor_callback(self, msg):
         # Increase the counter and process the update
         self.sensor_count += 1
-        self.get_logger().info('Sensor says: #%d "%s"' % (self.sensor_count, msg.position))
+        # self.get_logger().info('Sensor says: #%d "%s"' % (self.sensor_count, msg.position))
 
         # Calculate dt and save the timestamp
         ts = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e+9

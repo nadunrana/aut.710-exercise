@@ -88,9 +88,9 @@ class Server(Node):
         plt.ylabel("Y-Axis")
 
         # Landmarks
-        plt.plot(self.L0[0, 0], self.L0[1, 0], linestyle='None', marker="o", label='Landmark 0')
-        plt.plot(self.L1[0, 0], self.L1[1, 0], linestyle='None', marker="o", label='Landmark 1')
-        plt.plot(self.L2[0, 0], self.L2[1, 0], linestyle='None', marker="o", label='Landmark 2')
+        plt.plot(self.L0[0, 0], self.L0[1, 0], linestyle='None', marker="o", label='Landmark 1')
+        plt.plot(self.L1[0, 0], self.L1[1, 0], linestyle='None', marker="o", label='Landmark 2')
+        plt.plot(self.L2[0, 0], self.L2[1, 0], linestyle='None', marker="o", label='Landmark 3')
 
         # Initialization for animation and text labels
         predicted_coordinates = []
@@ -229,15 +229,15 @@ class Server(Node):
         p_y2 = np.sqrt(self.P_update[8, 8, :])
 
         # Plot the landmark coordinate with +/- standard deviation
-        axs6[0].plot(tspan2, self.L0_update[0, :], label="LM0")
-        axs6[0].plot(tspan2, self.L0_update[0, :] + p_x0, label="LM0 + Sigma")
-        axs6[0].plot(tspan2, self.L0_update[0, :] - p_x0, label="LM0 - Sigma")
-        axs6[0].plot(tspan2, self.L1_update[0, :], label="LM1")
-        axs6[0].plot(tspan2, self.L1_update[0, :] + p_x1, label="LM1 + Sigma")
-        axs6[0].plot(tspan2, self.L1_update[0, :] - p_x1, label="LM1 - Sigma")
-        axs6[0].plot(tspan2, self.L2_update[0, :], label="LM2")
-        axs6[0].plot(tspan2, self.L2_update[0, :] + p_x2, label="LM2 + Sigma")
-        axs6[0].plot(tspan2, self.L2_update[0, :] - p_x2, label="LM2 - Sigma")
+        axs6[0].plot(tspan2, self.L0_update[0, :], label="LM1")
+        axs6[0].plot(tspan2, self.L0_update[0, :] + p_x0, label="LM1 + Sigma")
+        axs6[0].plot(tspan2, self.L0_update[0, :] - p_x0, label="LM1 - Sigma")
+        axs6[0].plot(tspan2, self.L1_update[0, :], label="LM2")
+        axs6[0].plot(tspan2, self.L1_update[0, :] + p_x1, label="LM2 + Sigma")
+        axs6[0].plot(tspan2, self.L1_update[0, :] - p_x1, label="LM2 - Sigma")
+        axs6[0].plot(tspan2, self.L2_update[0, :], label="LM3")
+        axs6[0].plot(tspan2, self.L2_update[0, :] + p_x2, label="LM3 + Sigma")
+        axs6[0].plot(tspan2, self.L2_update[0, :] - p_x2, label="LM3 - Sigma")
         axs6[0].set_title("X versus Time")
         axs6[0].set_xlabel("Time (s)")
         axs6[0].set_ylabel("Value")
@@ -284,7 +284,7 @@ class Server(Node):
         self.ts1 = ts
 
         # Prediction
-        self.step_calculation(msg.velocity[0], msg.velocity[1], round(self.tspan1[-1] - self.tspan1[-2], 4))
+        self.step_calculation(msg.velocity[1], msg.velocity[0], round(self.tspan1[-1] - self.tspan1[-2], 4))
 
     def sensor_callback(self, msg):
         # Increase the counter and process the update
