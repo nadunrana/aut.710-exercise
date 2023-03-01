@@ -15,7 +15,7 @@
 # aut.710-exercise02-task3
 ### Source code: /src/py_server_2/py_server_2/server_task3.py
 4. Run: ros2 run py_server_2 task3
-5. On another terminal: ros2 bag play rosbag2_2023_02_05-01_49_26/rosbag2_2023_02_05-01_49_26.db3 -r 5
+5. On another terminal: ros2 bag play rosbag2_2023_02_05-01_49_26/rosbag2_2023_02_05-01_49_26_0.db3 -r 5
 
 # aut.710-exercise03-task1
 ### Source code: /src/py_server_3/py_server_2/server_task1.py
